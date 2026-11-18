@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>겜방 - 실시간 게임 소통 공간</title>
+    <!-- Socket.io 클라이언트 라이브러리 -->
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        :root {
+            --primary-color: #6c5ce7;
+            --primary-hover: #5b4bc4;
+            --bg-gradient: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            --card-bg: #ffffff;
+            --text-color: #2d3436;
+            --sub-text: #636e72;
+            --accent-color: #00cec9;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+        }
+
+        body {
+            background: var(--bg-gradient);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 10px;
+        }
+
+        .app-container {
+            width: 100%;
+            max-width: 480px;
+            height: 90vh;
+            max-height: 800px;
+            background: var(--card-bg);
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .screen {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+            padding: 24px;
+            overflow-y: auto;
+        }
+
+        .screen.active {
+            display: flex;
+        }
+
+        h1 { font-size: 24px; color: var(--primary-color); margin-bottom: 8px; text-align: center; }
+        p { font-size: 14px; color: var(--sub-text); text-align: center; margin-bottom: 20px; }
+        
+        input, button {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            border: 1px solid #dfe6e9;
+            font-size: 15px;
+            margin-bottom: 12px;
+            outline: none;
+        }
+
+        input:focus { border-color: var(--primary-color); }
+
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover { background-color: var(--primary-hover); }
+
+        .notice-box {
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 13px;
+            text-align: center;
+            margin-bottom: 20px;
+            border: 1px solid #ffeeba;
+        }
+
+        .room-select-content {
+            margin: auto 0;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .room-card {
+            background: #f8f9fa;
+            border: 2px solid #dfe6e9;
+            padding: 16px;
+            border-radius: 14px;
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .room-card:hover {
+            border-color: var(--primary-color);
+            background: #f1f2f6;
+            transform: translateY(-2px);
+        }
+        .room-card h3 { font-size: 16px; color: var(--text-color); margin-bottom: 4px; }
+        .room-card p { font-size: 12px; color: var(--sub-text); margin: 0; text-align: left; }
+
+        .entrance-content { margin: auto 0; }
+        .owner-section {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px dashed #dfe6e9;
+        }
+        .owner-section h3 { font-size: 13px; color: var(--sub-text); margin-bottom: 8px; }
+
+        .waiting-content { margin: auto; text-align: center; }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #dfe6e9;
+            border-top: 5px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px auto;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .chat-header {
+            padding: 12px 16px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .chat-header h2 { font-size: 16px; color: var(--text-color); margin: 0; }
+        .chat-header span { font-size: 12px; color: var(--sub-text); }
+
+        .pinned-area {
+            background: #e8f4fd;
+            padding: 10px 16px;
+            border-bottom: 1px solid #d0e1fd;
+            font-size: 13px;
+            color: #1d6fa5;
+            display: none;
+        }
+        .pinned-area.active { display: block; }
+
+        .chat-messages {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background: #fafbfc;
+        }
+
+        .message-wrapper {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            max-width: 75%;
+            cursor: pointer;
+            user-select: none;
+        }
+        .message-wrapper.mine { align-self: flex-end; align-items: flex-end; }
+        .message-wrapper.other { align-self: flex-start; align-items: flex-start; }
+
+        .message {
+            padding: 10px 14px;
+            border-radius: 14px;
+            font-size: 14px;
+            line-height: 1.4;
+            word-break: break-all;
+            position: relative;
+        }
+        .message-wrapper.mine .message { background: var(--primary-color); color: white; border-bottom-right-radius: 2px; }
+        .message-wrapper.other .message { background: #e4e6eb; color: var(--text-color); border-bottom-left-radius: 2px; }
+        .message.owner-msg { background: #ffeaa7 !important; color: #d63031 !important; border: 1px solid #fab1a0; }
+
+        .heart-badge {
+            position: absolute;
+            bottom: -8px;
+            right: -6px;
+            background: white;
+            border-radius: 50%;
+            width: 22px;
+            height: 22px;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+            font-size: 12px;
+            animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .message-wrapper.liked .heart-badge { display: flex; }
+        @keyframes popIn { 0% { transform: scale(0); } 100% { transform: scale(1); } }
+
+        .chat-input-area {
+            padding: 12px;
+            background: white;
+            border-top: 1px solid #eee;
+            display: flex;
+            gap: 8px;
+        }
+        .chat-input-area input { margin: 0; }
+        .chat-input-area button { width: 80px; margin: 0; }
+
+        .owner-panel {
+            background: #fff0f0;
+            border-top: 2px solid #ff7675;
+            padding: 12px;
+            display: none;
+        }
+        .owner-panel.active { display: block; }
+        .owner-panel h4 { font-size: 13px; color: #d63031; margin-bottom: 6px; }
+        .waiting-user-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            background: white;
+            padding: 6px 10px;
+            border-radius: 6px;
+            margin-bottom: 6px;
+        }
+        .action-btns { display: flex; gap: 4px; }
+        .action-btns button { padding: 4px 8px; font-size: 11px; width: auto; margin: 0; }
+        .btn-accept { background-color: #00b894; }
+        .btn-reject { background-color: #d63031; }
+        .btn-close-room { background-color: #b2bec3; margin-top: 6px; font-size: 12px; padding: 6px; }
+        .btn-back { background-color: #b2bec3; margin-bottom: 12px; font-size: 13px; padding: 8px; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <!-- 화면 0: 게임방 선택 로비 -->
+    <div id="screen-room-select" class="screen active">
+        <div class="room-select-content">
+            <h1>🎮 겜방 로비</h1>
+            <p>입장할 게임 방을 선택해주세요</p>
+            <div class="room-card" onclick="selectRoom('오버워치방')">
+                <h3>🛡️ 오버워치방</h3>
+                <p>탱글탱글 탱커와 힐러들의 이야기 공간</p>
+            </div>
+            <div class="room-card" onclick="selectRoom('발로란트방')">
+                <h3>🎯 발로란트방</h3>
+                <p>에임 연습과 전략을 나누는 요원들의 모임</p>
+            </div>
+            <div class="room-card" onclick="selectRoom('브롤스타즈방')">
+                <h3>⭐ 브롤스타즈방</h3>
+                <p>스타 파워와 트로피 상승을 위한 방</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 화면 1: 입구 -->
+    <div id="screen-entrance" class="screen">
+        <button class="btn-back" onclick="leaveToLobby()">← 방 선택으로 돌아가기</button>
+        <div class="entrance-content">
+            <h1 id="selected-room-title">🎮 겜방</h1>
+            <p>친구와 게임 이야기 하는 방</p>
+            <div class="notice-box">안내: 방장이 먼저 들어와야 입장할 수 있어요.</div>
+            <input type="text" id="nickname-input" placeholder="닉네임을 입력하세요">
+            <button id="btn-request-entry">입장 요청하기</button>
+            <div class="owner-section">
+                <h3>방장 전용</h3>
+                <input type="password" id="owner-pw-input" placeholder="방장 암호 입력 (기본: 1234)">
+                <button id="btn-owner-login" style="background-color: #2d3436;">방장으로 입장</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 화면 2: 대기실 -->
+    <div id="screen-waiting" class="screen">
+        <div class="waiting-content">
+            <div class="spinner"></div>
+            <h1>입장 확인 중...</h1>
+            <p>방장이 수락하면 바로 들어가요</p>
+            <button id="btn-cancel-waiting" style="background-color: #b2bec3; margin-top: 20px;">취소하고 나가기</button>
+        </div>
+    </div>
+
+    <!-- 화면 3: 채팅방 -->
+    <div id="screen-chat" class="screen" style="padding: 0;">
+        <div class="chat-header">
+            <div>
+                <h2 id="room-title">겜방</h2>
+                <span id="participant-count">실시간 접속 중</span>
+            </div>
+            <button id="btn-leave-room" style="width: auto; padding: 6px 12px; font-size: 12px; background: #ff7675; margin:0;">나가기</button>
+        </div>
+
+        <div id="pinned-area" class="pinned-area">
+            📌 <strong>[방장 공지]</strong> <span id="pinned-text"></span>
+        </div>
+
+        <div id="chat-messages" class="chat-messages"></div>
+
+        <div id="owner-panel" class="owner-panel">
+            <h4>👑 방장 관리 패널</h4>
+            <div id="waiting-list-container">
+                <p style="font-size: 12px; color: #b2bec3; text-align: left; margin: 0;">대기 중인 사람이 없습니다.</p>
+            </div>
+            <button id="btn-close-room" class="btn-close-room">방 닫기</button>
+        </div>
+
+        <div class="chat-input-area">
+            <input type="text" id="chat-input" placeholder="메시지를 입력하세요...">
+            <button id="btn-send">보내기</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const socket = io();
+
+    let currentRoom = "";
+    let myName = "";
+    let isOwner = false;
+
+    function showScreen(screenId) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(screenId).classList.add('active');
+    }
+
+    window.selectRoom = function(roomName) {
+        currentRoom = roomName;
+        document.getElementById('selected-room-title').innerText = "🎮 " + roomName;
+        document.getElementById('room-title').innerText = roomName;
+        showScreen('screen-entrance');
+    };
+
+    window.leaveToLobby = function() {
+        currentRoom = "";
+        showScreen('screen-room-select');
+    };
+
+    document.getElementById('btn-request-entry').addEventListener('click', () => {
+        const input = document.getElementById('nickname-input');
+        if (!input.value.trim()) { alert('닉네임을 입력해주세요!'); return; }
+        myName = input.value.trim();
+        showScreen('screen-waiting');
+
+        socket.emit('join_room_request', { room: currentRoom, name: myName });
+    });
+
+    document.getElementById('btn-cancel-waiting').addEventListener('click', () => {
+        showScreen('screen-entrance');
+    });
+
+    document.getElementById('btn-owner-login').addEventListener('click', () => {
+        const pw = document.getElementById('owner-pw-input').value;
+        socket.emit('owner_login', { room: currentRoom, password: pw });
+    });
+
+    socket.on('owner_login_success', () => {
+        isOwner = true;
+        myName = "방장";
+        document.getElementById('owner-panel').classList.add('active');
+        showScreen('screen-chat');
+    });
+
+    socket.on('login_failed', (msg) => {
+        alert(msg);
+    });
+
+    // 서버로부터 방 상태 업데이트 수신
+    socket.on('room_state_update', (data) => {
+        // 1. 일반 사용자 승인 여부 체크
+        if (!isOwner && myName) {
+            if (data.approved.includes(myName)) {
+                showScreen('screen-chat');
+            }
+        }
+
+        // 2. 방장 대기열 갱신
+        if (isOwner) {
+            const container = document.getElementById('waiting-list-container');
+            if (data.waiting.length === 0) {
+                container.innerHTML = '<p style="font-size: 12px; color: #b2bec3; text-align: left; margin: 0;">대기 중인 사람이 없습니다.</p>';
+            } else {
+                container.innerHTML = '';
+                data.waiting.forEach(name => {
+                    const item = document.createElement('div');
+                    item.className = 'waiting-user-item';
+                    item.innerHTML = `<span>${name}</span><div class="action-btns"><button class="btn-accept" onclick="acceptUser('${name}')">수락</button><button class="btn-reject" onclick="rejectUser('${name}')">거절</button></div>`;
+                    container.appendChild(item);
+                });
+            }
+        }
+
+        // 3. 메시지 렌더링
+        const chatMessages = document.getElementById('chat-messages');
+        const isAtBottom = chatMessages.scrollHeight - chatMessages.scrollTop <= chatMessages.clientHeight + 50;
+        chatMessages.innerHTML = '';
+
+        data.messages.forEach(msg => {
+            const wrapperDiv = document.createElement('div');
+            wrapperDiv.className = msg.name === myName ? 'message-wrapper mine' : 'message-wrapper other';
+            wrapperDiv.setAttribute('ondblclick', `toggleLike('${msg.id}')`);
+
+            const msgDiv = document.createElement('div');
+            if (msg.isOwner) {
+                msgDiv.className = 'message owner-msg';
+                msgDiv.innerText = `[방장] ${msg.text}`;
+            } else {
+                msgDiv.className = msg.name === myName ? 'message mine' : 'message other';
+                msgDiv.innerText = `${msg.name}: ${msg.text}`;
+            }
+
+            const heartBadge = document.createElement('div');
+            heartBadge.className = 'heart-badge';
+            heartBadge.innerText = '❤️';
+            if (msg.liked) wrapperDiv.classList.add('liked');
+
+            wrapperDiv.appendChild(msgDiv);
+            wrapperDiv.appendChild(heartBadge);
+            chatMessages.appendChild(wrapperDiv);
+        });
+
+        if (isAtBottom) {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // 4. 공지 렌더링
+        const pinnedArea = document.getElementById('pinned-area');
+        const pinnedText = document.getElementById('pinned-text');
+        if (data.pinned) {
+            pinnedText.innerText = data.pinned;
+            pinnedArea.classList.add('active');
+        } else {
+            pinnedArea.classList.remove('active');
+        }
+    });
+
+    window.acceptUser = function(name) {
+        socket.emit('accept_user', { room: currentRoom, name });
+    };
+
+    window.rejectUser = function(name) {
+        socket.emit('reject_user', { room: currentRoom, name });
+    };
+
+    document.getElementById('btn-send').addEventListener('click', sendMessage);
+    document.getElementById('chat-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
+
+    function sendMessage() {
+        const input = document.getElementById('chat-input');
+        const text = input.value.trim();
+        if (!text) return;
+
+        socket.emit('send_message', { room: currentRoom, text, isOwnerMsg: isOwner });
+        input.value = "";
+    }
+
+    window.toggleLike = function(msgId) {
+        socket.emit('toggle_like', { room: currentRoom, msgId });
+    };
+
+    socket.on('room_closed', () => {
+        alert('방이 닫혔습니다.');
+        isOwner = false;
+        showScreen('screen-room-select');
+    });
+
+    document.getElementById('btn-leave-room').addEventListener('click', () => {
+        if (confirm('채팅방을 나가시겠습니까?')) {
+            isOwner = false;
+            showScreen('screen-room-select');
+        }
+    });
+
+    document.getElementById('btn-close-room').addEventListener('click', () => {
+        if (confirm('정말 방을 닫으시겠습니까?')) {
+            socket.emit('close_room', { room: currentRoom });
+        }
+    });
+</script>
+</body>
+</html>
